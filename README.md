@@ -48,6 +48,8 @@ OpenReply is built around Meta's official Instagram private replies. It does not
 
 The web app receives the webhook and serves the dashboard. A separate worker process does the sending, because the send has to survive rate limits and retries. Both talk to the same Postgres and Redis.
 
+There's also a small `ig` CLI for publishing posts, carousels, reels and stories from the terminal. See [docs/ig-cli.md](docs/ig-cli.md).
+
 ## Quick start
 
 You need a few free accounts before anything works: a Meta developer app, a Resend account for login emails, and somewhere to host (Vercel for the web app, Railway for the worker plus Postgres and Redis). The Instagram account you connect has to be a Business or Creator account, not a personal one.

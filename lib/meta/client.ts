@@ -21,22 +21,22 @@ export class MetaApiError extends Error {
 }
 
 export class TokenExpiredError extends MetaApiError {
-  constructor(message: string, fbTraceId?: string) {
-    super(190, undefined, fbTraceId, message);
+  constructor(message: string, fbTraceId?: string, subcode?: number) {
+    super(190, subcode, fbTraceId, message);
     this.name = "TokenExpiredError";
   }
 }
 
 export class RateLimitError extends MetaApiError {
-  constructor(message: string, fbTraceId?: string) {
-    super(368, undefined, fbTraceId, message);
+  constructor(message: string, fbTraceId?: string, subcode?: number) {
+    super(368, subcode, fbTraceId, message);
     this.name = "RateLimitError";
   }
 }
 
 export class PermissionError extends MetaApiError {
-  constructor(message: string, fbTraceId?: string) {
-    super(100, undefined, fbTraceId, message);
+  constructor(message: string, fbTraceId?: string, subcode?: number) {
+    super(100, subcode, fbTraceId, message);
     this.name = "PermissionError";
   }
 }
@@ -108,7 +108,7 @@ interface TokenResponse {
   expires_in?: number;
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
+export async function handleResponse<T>(response: Response): Promise<T> {
   const data = await response.json();
 
   if (!response.ok || (data as GraphApiError).error) {
@@ -127,15 +127,15 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
     switch (code) {
       case 190:
-        throw new TokenExpiredError(message, traceId);
+        throw new TokenExpiredError(message, traceId, subcode);
       case 368:
       case 4:
       case 17:
-        throw new RateLimitError(message, traceId);
+        throw new RateLimitError(message, traceId, subcode);
       case 10:
       case 100:
       case 200:
-        throw new PermissionError(message, traceId);
+        throw new PermissionError(message, traceId, subcode);
       default:
         throw new MetaApiError(code, subcode, traceId, message);
     }
