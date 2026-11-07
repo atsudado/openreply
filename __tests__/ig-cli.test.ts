@@ -16,6 +16,7 @@ let nextId: number;
 
 function route(method: string, path: string): object {
   if (failWith && path.endsWith(failWith.path)) return { error: failWith.error };
+  if (path.endsWith("/refresh_access_token")) return { access_token: "new-token", token_type: "bearer", expires_in: 5184000 };
   if (path.endsWith("/me")) return { user_id: IG, username: "tryautom", account_type: "BUSINESS" };
   if (path.endsWith("/content_publishing_limit")) {
     return { data: [{ quota_usage: 3, config: { quota_total: 50, quota_duration: 86400 } }] };
@@ -33,16 +34,21 @@ beforeEach(() => {
   nextId = 0;
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: URL, init: RequestInit) => {
+    vi.fn(async (input: URL | string, init: RequestInit = {}) => {
       const url = new URL(input);
+      const method = init.method ?? "GET";
       expect(url.host).toBe("graph.instagram.com");
-      expect(url.toString()).not.toContain(TOKEN); // token only travels in the header
-      expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`);
+      if (url.pathname.endsWith("/refresh_access_token")) {
+        expect(url.searchParams.get("access_token")).toBe(TOKEN); // Meta's renew endpoint takes it as a query param
+      } else {
+        expect(url.toString()).not.toContain(TOKEN); // everywhere else it only travels in the header
+        expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`);
+      }
       const params = Object.fromEntries(
-        init.method === "POST" ? new URLSearchParams(init.body as URLSearchParams) : url.searchParams
+        method === "POST" ? new URLSearchParams(init.body as URLSearchParams) : url.searchParams
       );
-      calls.push({ method: init.method!, path: url.pathname, params });
-      const body = route(init.method!, url.pathname);
+      calls.push({ method, path: url.pathname, params });
+      const body = route(method, url.pathname);
       return new Response(JSON.stringify(body), { status: "error" in body ? 400 : 200, headers: { "content-type": "application/json" } });
     })
   );
@@ -63,6 +69,7 @@ function makeDeps(overrides: Partial<Deps> = {}) {
       return `https://cdn.example.com/${file}`;
     }),
     pollIntervalMs: 1,
+    saveEnv: vi.fn(async () => {}),
     ...overrides,
   };
   const json = () => JSON.parse(out.at(-1)!);
@@ -93,6 +100,31 @@ describe("ig cli", () => {
     const { deps, json } = makeDeps();
     expect(await run(["whoami", "--json"], deps)).toBe(0);
     expect(json()).toMatchObject({ ok: true, username: "tryautom", user_id: IG });
+  });
+
+  it("refresh-token saves the new token and expiry without printing it", async () => {
+    const { deps, json, out } = makeDeps();
+    expect(await run(["refresh-token", "--json"], deps)).toBe(0);
+    expect(calls[0].path).toBe("/v25.0/refresh_access_token");
+    expect(calls[0].params.grant_type).toBe("ig_refresh_token");
+    expect(deps.saveEnv).toHaveBeenCalledWith({ IG_ACCESS_TOKEN: "new-token", IG_TOKEN_EXPIRES_AT: expect.any(String) });
+    expect([59, 60]).toContain(json().tokenDaysLeft);
+    expect(out.join()).not.toContain("new-token");
+  });
+
+  it("refresh-token on an expired token explains how to get a new one", async () => {
+    failWith = { path: "/refresh_access_token", error: { message: "Session has expired", type: "OAuthException", code: 190 } };
+    const { deps, json } = makeDeps();
+    expect(await run(["refresh-token", "--json"], deps)).toBe(1);
+    expect(json().fix).toMatch(/Generate token/);
+    expect(deps.saveEnv).not.toHaveBeenCalled();
+  });
+
+  it("whoami shows days left when the expiry is known", async () => {
+    const in10 = new Date(Date.now() + 10.5 * 86_400_000).toISOString();
+    const { deps, json } = makeDeps({ env: { IG_ACCESS_TOKEN: TOKEN, IG_TOKEN_EXPIRES_AT: in10 } });
+    await run(["whoami", "--json"], deps);
+    expect(json()).toMatchObject({ tokenDaysLeft: 10, tokenExpiresAt: in10 });
   });
 
   it("quota reads content_publishing_limit", async () => {

@@ -5,6 +5,7 @@ import {
   PermissionError,
   RateLimitError,
   TokenExpiredError,
+  refreshLongLivedToken,
 } from "@/lib/meta/client";
 import * as api from "@/lib/meta/publish";
 import {
@@ -24,7 +25,8 @@ export const USAGE = `ig - publish to Instagram via the Content Publishing API
   ig reel <video> [--caption "..."] [--cover <image>] [--share-to-feed] [--trial manual|auto]
   ig story <image|video>
   ig quota
-  ig whoami
+  ig whoami                 (also shows days until the token expires)
+  ig refresh-token          renew the token for another 60 days, saved to .env
 
 Media can be local files or public https URLs. Local files go to R2 first.
 
@@ -90,14 +92,17 @@ export function explain(err: unknown): { error: string; fix?: string; detail?: s
 }
 
 export interface Deps {
-  env: NodeJS.ProcessEnv;
+  env: Record<string, string | undefined>;
   stdout: (s: string) => void;
   stderr: (s: string) => void;
   confirm: (question: string) => Promise<boolean>;
   prepareImage: typeof prepareImage;
   getUploader: typeof getUploader;
+  saveEnv: (vars: Record<string, string>) => Promise<void>;
   pollIntervalMs?: number;
 }
+
+const daysUntil = (iso: string) => Math.floor((Date.parse(iso) - Date.now()) / 86_400_000);
 
 const TRIAL: Record<string, string> = { manual: "MANUAL", auto: "SS_PERFORMANCE" };
 
@@ -148,7 +153,24 @@ export async function run(argv: string[], deps: Deps): Promise<number> {
 
     if (cmd === "whoami") {
       const a = await api.getAccount(token);
-      print(a, `@${a.username}${a.name ? ` (${a.name})` : ""}, ${a.account_type ?? "account"}, IG user ID ${a.user_id}`);
+      const expiresAt = deps.env.IG_TOKEN_EXPIRES_AT;
+      const left = expiresAt ? daysUntil(expiresAt) : undefined;
+      print(
+        { ...a, tokenExpiresAt: expiresAt, tokenDaysLeft: left },
+        `@${a.username}${a.name ? ` (${a.name})` : ""}, ${a.account_type ?? "account"}, IG user ID ${a.user_id}` +
+          (left === undefined ? "" : `\nToken expires ${expiresAt!.slice(0, 10)} (${left} days left)`)
+      );
+      return 0;
+    }
+    if (cmd === "refresh-token") {
+      // Meta only renews a token that is at least 24h old and not yet expired.
+      const { accessToken, expiresIn } = await refreshLongLivedToken(token);
+      const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+      await deps.saveEnv({ IG_ACCESS_TOKEN: accessToken, IG_TOKEN_EXPIRES_AT: expiresAt });
+      print(
+        { tokenExpiresAt: expiresAt, tokenDaysLeft: daysUntil(expiresAt) },
+        `Token renewed and saved to .env. It now expires ${expiresAt.slice(0, 10)} (${daysUntil(expiresAt)} days).`
+      );
       return 0;
     }
     if (cmd === "quota") {

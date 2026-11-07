@@ -95,7 +95,7 @@ export type Uploader = (file: string, contentType: string) => Promise<string>;
 
 const R2_VARS = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET", "R2_PUBLIC_URL"];
 
-function r2Uploader(env: NodeJS.ProcessEnv): Uploader {
+function r2Uploader(env: Record<string, string | undefined>): Uploader {
   const missing = R2_VARS.filter((k) => !env[k]);
   if (missing.length) {
     throw new UserError(`R2 upload isn't configured: missing ${missing.join(", ")}.`, "Add them to .env (see docs/ig-cli.md), or pass public URLs instead of local files.");
@@ -119,9 +119,9 @@ function r2Uploader(env: NodeJS.ProcessEnv): Uploader {
   };
 }
 
-const UPLOADERS: Record<string, (env: NodeJS.ProcessEnv) => Uploader> = { r2: r2Uploader };
+const UPLOADERS: Record<string, (env: Record<string, string | undefined>) => Uploader> = { r2: r2Uploader };
 
-export function getUploader(env: NodeJS.ProcessEnv = process.env): Uploader {
+export function getUploader(env: Record<string, string | undefined> = process.env): Uploader {
   const name = env.IG_UPLOADER ?? "r2";
   const make = UPLOADERS[name];
   if (!make) throw new UserError(`Unknown IG_UPLOADER "${name}".`, `Use one of: ${Object.keys(UPLOADERS).join(", ")}.`);

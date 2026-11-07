@@ -34,6 +34,17 @@ setting (`lib/env.ts`).
    alias ig="$HOME/Desktop/openreply/node_modules/.bin/tsx --tsconfig $HOME/Desktop/openreply/tsconfig.json $HOME/Desktop/openreply/cli/ig.ts"
    ```
 
+## Keeping the token alive
+
+Instagram tokens last 60 days. `ig refresh-token` renews it for another 60 days and saves it to `.env`.
+Meta only renews a token that's at least a day old and hasn't expired yet.
+`ig whoami` shows how many days are left.
+
+To renew it automatically every week, use a launchd job (`~/Library/LaunchAgents/com.tryautom.ig-refresh-token.plist`). It runs
+`ig refresh-token` every Monday at 10:00 and shows a macOS notification if renewal fails. The first run may ask
+for permission for `node` to read the Desktop folder. An expired token can't be renewed: generate a new one in the
+Meta dashboard (see Setup).
+
 ## Examples
 
 ```bash
