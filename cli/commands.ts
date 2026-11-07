@@ -21,7 +21,7 @@ export const USAGE = `ig - publish to Instagram via the Content Publishing API
 
   ig post <image> [--caption "..."]
   ig carousel <img|video> <img|video> ... [--caption "..."]   (2-10 items)
-  ig reel <video> [--caption "..."] [--cover <image>] [--share-to-feed]
+  ig reel <video> [--caption "..."] [--cover <image>] [--share-to-feed] [--trial manual|auto]
   ig story <image|video>
   ig quota
   ig whoami
@@ -31,7 +31,9 @@ Media can be local files or public https URLs. Local files go to R2 first.
   --dry-run    validate everything, upload and create nothing
   -y, --yes    skip the confirmation prompt
   --json       print one JSON object to stdout
-  --timeout N  seconds to wait for Instagram to process media (default 300)`;
+  --timeout N  seconds to wait for Instagram to process media (default 300)
+  --trial      reel only: show to non-followers first. manual = you graduate it in
+               the Instagram app; auto = Instagram graduates it if it performs well`;
 
 const TOKEN_FIX =
   "Generate a new token: Meta dashboard -> OpenReply -> Use cases -> Instagram API -> " +
@@ -97,6 +99,8 @@ export interface Deps {
   pollIntervalMs?: number;
 }
 
+const TRIAL: Record<string, string> = { manual: "MANUAL", auto: "SS_PERFORMANCE" };
+
 const SPECS = {
   post: { min: 1, max: 1, kinds: ["image"], feed: true },
   carousel: { min: 2, max: 10, kinds: ["image", "video"], feed: true },
@@ -125,6 +129,7 @@ export async function run(argv: string[], deps: Deps): Promise<number> {
         caption: { type: "string", short: "c" },
         cover: { type: "string" },
         "share-to-feed": { type: "boolean" },
+        trial: { type: "string" },
         "dry-run": { type: "boolean" },
         yes: { type: "boolean", short: "y" },
         json: { type: "boolean" },
@@ -169,8 +174,13 @@ export async function run(argv: string[], deps: Deps): Promise<number> {
     }
     const caption = typeof o.caption === "string" ? o.caption : undefined;
     if (caption !== undefined && cmd === "story") throw new UserError("Stories can't have a caption.");
-    if ((o.cover || o["share-to-feed"]) && cmd !== "reel") {
-      throw new UserError("--cover and --share-to-feed only apply to `ig reel`.");
+    if ((o.cover || o["share-to-feed"] || o.trial) && cmd !== "reel") {
+      throw new UserError("--cover, --share-to-feed and --trial only apply to `ig reel`.");
+    }
+    const graduation = o.trial === undefined ? undefined : TRIAL[o.trial];
+    if (o.trial !== undefined && !graduation) throw new UserError(`--trial must be "manual" or "auto", got "${o.trial}".`);
+    if (graduation && o["share-to-feed"]) {
+      throw new UserError("A trial reel goes to non-followers only, so it can't also be shared to your feed.", "Drop --share-to-feed.");
     }
     const captionErrors = checkCaption(caption ?? "");
     if (captionErrors.length) throw new UserError(captionErrors.join(" "));
@@ -205,6 +215,7 @@ export async function run(argv: string[], deps: Deps): Promise<number> {
       caption,
       cover: cover?.input,
       shareToFeed: cmd === "reel" ? Boolean(o["share-to-feed"]) : undefined,
+      trial: graduation,
     };
     if (o["dry-run"]) {
       print(
@@ -251,7 +262,9 @@ export async function run(argv: string[], deps: Deps): Promise<number> {
         video_url: await urlOf(items[0]),
         caption,
         cover_url: cover ? await urlOf(cover) : undefined,
-        share_to_feed: String(Boolean(o["share-to-feed"])),
+        // trial reels are non-follower only, so share_to_feed isn't sent with them
+        share_to_feed: graduation ? undefined : String(Boolean(o["share-to-feed"])),
+        trial_params: graduation ? JSON.stringify({ graduation_strategy: graduation }) : undefined,
       });
     } else if (cmd === "story") {
       containerId = await api.createContainer(token, uid, { media_type: "STORIES", ...(await mediaParam(items[0])) });

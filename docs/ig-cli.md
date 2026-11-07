@@ -42,6 +42,8 @@ ig quota
 ig post photo.heic --caption "New drop #fashion"        # HEIC/PNG/WebP converted to JPEG
 ig carousel 1.jpg 2.jpg clip.mp4 --caption "Lookbook"   # 2-10 items
 ig reel video.mp4 --caption "BTS" --cover cover.jpg --share-to-feed
+ig reel video.mp4 --caption "Test" --trial manual            # trial reel: non-followers first; graduate it in the app
+ig reel video.mp4 --trial auto                            # Instagram graduates it if it performs well
 ig story https://example.com/story.jpg
 ig post photo.jpg --caption "test" --dry-run            # validates; uploads and creates nothing
 ig post photo.jpg --caption "go" --yes --json           # no prompt, machine-readable output

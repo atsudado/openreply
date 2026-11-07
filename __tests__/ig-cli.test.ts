@@ -138,6 +138,23 @@ describe("ig cli", () => {
     });
   });
 
+  it("reel --trial sends trial_params and no share_to_feed", async () => {
+    const { deps, json } = makeDeps();
+    expect(await run(["reel", "https://x.com/v.mp4", "--trial", "auto", "-y", "--json"], deps)).toBe(0);
+    expect(posts()[0].params).toEqual({
+      media_type: "REELS",
+      video_url: "https://x.com/v.mp4",
+      trial_params: JSON.stringify({ graduation_strategy: "SS_PERFORMANCE" }),
+    });
+    expect(json().ok).toBe(true);
+    calls = [];
+    expect(await run(["reel", "https://x.com/v.mp4", "--trial", "maybe", "--json"], deps)).toBe(1);
+    expect(await run(["reel", "https://x.com/v.mp4", "--trial", "manual", "--share-to-feed", "--json"], deps)).toBe(1);
+    expect(json().error).toMatch(/non-followers/);
+    expect(await run(["post", "https://x.com/a.jpg", "--trial", "manual", "--json"], deps)).toBe(1);
+    expect(calls).toEqual([]);
+  });
+
   it("story uses STORIES and rejects captions", async () => {
     const { deps } = makeDeps();
     await run(["story", "https://x.com/s.mp4", "-y"], deps);
